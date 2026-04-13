@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+outputs/run_*/
+outputs/run_quick_test/
+outputs/debug/pdf_text/
+
+*.pt

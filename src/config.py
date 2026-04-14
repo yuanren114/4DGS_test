@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 import datetime as _dt
 import json
+import shutil
 
 try:
     import yaml
@@ -24,16 +25,24 @@ class PreprocessConfig:
     image_size: int = 256
     depth_method: str = "depth_anything_v2"
     camera_method: str = "colmap_or_simple_vo"
-    mask_method: str = "fallback"
+    mask_method: str = "gdino_sam2"
+    prompt: str = "a person"
+    box_threshold: float = 0.3
+    gdino_model_id: str = "IDEA-Research/grounding-dino-base"
     sam2_repo: str = "external/sam2"
-    sam2_checkpoint: str = "checkpoints/sam2.1_hiera_large.pt"
-    sam2_model_cfg: str = "configs/sam2.1/sam2.1_hiera_l.yaml"
+    sam2_config: str = "configs/sam2/sam2_hiera_l.yaml"
+    sam2_ckpt: str = "checkpoints/sam2_hiera_large.pt"
+    sam2_checkpoint: str = "checkpoints/sam2_hiera_large.pt"
+    sam2_model_cfg: str = "configs/sam2/sam2_hiera_l.yaml"
     sam2_points: List[List[float]] = field(default_factory=list)
     sam2_point_labels: List[int] = field(default_factory=list)
     sam2_box: Optional[List[float]] = None
+    sam2_mask_path: str = ""
     selected_mask_id: int = 0
     sam2_obj_id: int = 1
     sam2_mask_threshold: float = 0.0
+    overwrite: bool = False
+    stop_after_init: bool = False
     track_method: str = "proxy_grid_lk"
     bootstap_repo: str = "external/tapnet"
     bootstap_checkpoint: str = "checkpoints/bootstapir_checkpoint_v2.pt"
@@ -106,6 +115,8 @@ class AppConfig:
         if not self.run_name:
             self.run_name = "run_" + _dt.datetime.now().strftime("%Y%m%d_%H%M")
         run_dir = Path(self.output_root) / self.run_name
+        if self.preprocess.overwrite and run_dir.exists():
+            shutil.rmtree(run_dir)
         for name in ["preprocess", "checkpoints", "debug", "visualizations", "inference"]:
             (run_dir / name).mkdir(parents=True, exist_ok=True)
         return run_dir
@@ -126,6 +137,7 @@ def load_config(path: Optional[str] = None, overrides: Optional[Dict[str, Any]] 
     """Load configuration from YAML plus optional dictionary overrides."""
 
     cfg_dict = asdict(AppConfig())
+    loaded = {}
     if path:
         with open(path, "r", encoding="utf-8") as f:
             loaded = yaml.safe_load(f) if yaml is not None else json.load(f)
@@ -133,6 +145,13 @@ def load_config(path: Optional[str] = None, overrides: Optional[Dict[str, Any]] 
         cfg_dict = _merge_dict(cfg_dict, loaded)
     if overrides:
         cfg_dict = _merge_dict(cfg_dict, overrides)
+    preprocess_loaded = loaded.get("preprocess", {}) if isinstance(loaded, dict) else {}
+    preprocess_overrides = overrides.get("preprocess", {}) if isinstance(overrides, dict) else {}
+    preprocess_sources = [preprocess_loaded, preprocess_overrides]
+    if any("sam2_checkpoint" in source for source in preprocess_sources) and not any("sam2_ckpt" in source for source in preprocess_sources):
+        cfg_dict["preprocess"]["sam2_ckpt"] = cfg_dict["preprocess"]["sam2_checkpoint"]
+    if any("sam2_model_cfg" in source for source in preprocess_sources) and not any("sam2_config" in source for source in preprocess_sources):
+        cfg_dict["preprocess"]["sam2_config"] = cfg_dict["preprocess"]["sam2_model_cfg"]
 
     return AppConfig(
         output_root=cfg_dict["output_root"],

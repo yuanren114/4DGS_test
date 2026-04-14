@@ -31,7 +31,7 @@ Engineering substitutions:
 | Depth | Dataset/sensor or pretrained depth input | Depth Anything v2 wrapper, fallback pseudo-depth for quick tests | MEDIUM | HIGH | YES |
 | Camera | Dataset/sensor or pretrained camera parameters | COLMAP-ready interface, simple proxy trajectory by default | LOW | HIGH | YES |
 | AnchorTAP3D | BootsTAP + TAPIP3D with anchor-guided sliding-window 3D tracking | Default `proxy_grid_lk`; optional `bootstap_tapip3d_components` adapters without the missing anchor-window modification | LOW | HIGH | YES |
-| Masks | Dynamic object masks | SAM2 manual or auto-first-frame propagation; RGB fallback remains available | MEDIUM | MEDIUM | YES |
+| Masks | Dynamic object masks | Grounding DINO text-prompt detection on the first frame plus SAM2 video propagation; manual SAM2 and RGB fallback remain available | MEDIUM | HIGH | YES |
 | Dynamic Gaussians | Canonical 3DGS with hierarchical motion | Compact PyTorch Gaussians with KNN node translations | MEDIUM-LOW | HIGH | YES |
 | Renderer | Differentiable 3DGS rasterizer | Pure PyTorch isotropic splatter | LOW | HIGH | YES |
 | Losses | RGB, mask, depth, track, ARAP | Implemented approximations with logged terms | MEDIUM | MEDIUM | YES |
@@ -44,7 +44,7 @@ Create an environment with Python 3.10+ and install:
 pip install -r requirements.txt
 ```
 
-For real videos, `opencv-python` is needed for frame extraction and optical flow. `transformers` enables Depth Anything v2 loading. If Depth Anything weights cannot be downloaded, the code still runs with the documented fallback, but quality should not be trusted.
+For real videos, `opencv-python` is needed for frame extraction and optical flow. `transformers` enables Depth Anything v2 and Grounding DINO loading. If Depth Anything weights cannot be downloaded, the code still runs with the documented depth fallback, but quality should not be trusted. Grounding DINO failures do not silently fall back during the default mask workflow.
 
 To set up the optional official tracker components:
 
@@ -67,7 +67,7 @@ and downloads:
 
 TAPIP3D's official inference additionally requires its compiled `pointops2` extension and the environment described in `external/TAPIP3D/README.md`. On Windows/Python 3.13 this may require Microsoft C++ Build Tools or, more practically, a separate Python 3.10 CUDA environment.
 
-For SAM2 masks, install the official SAM2 package after setup:
+For default masks, install the official SAM2 package after setup and provide Grounding DINO access through `transformers`:
 
 ```bash
 pip install -e external/sam2
@@ -99,13 +99,13 @@ The quick test prints tensor shapes, loss terms, preprocessing paths, and saves 
 ## Preprocess A Video
 
 ```bash
-python scripts/preprocess_video.py --input_video path/to/video.mp4 --max_frames 80
+python scripts/preprocess_video.py --input_video path/to/video.mp4 --prompt "a person" --max_frames 80
 ```
 
 You can also pass a directory of RGB frames:
 
 ```bash
-python scripts/preprocess_video.py --input_video path/to/frames
+python scripts/preprocess_video.py --input_video path/to/frames --prompt "a person"
 ```
 
 Preprocessing writes:
@@ -116,6 +116,8 @@ outputs/run_YYYYMMDD_HHMM/preprocess/
   depth/
   camera/cameras.json
   masks/
+  masks_debug/
+  masks_preview/
   tracks/tracks.npz
   metadata/preprocess_manifest.json
 ```
@@ -123,99 +125,99 @@ outputs/run_YYYYMMDD_HHMM/preprocess/
 Mask outputs are saved to:
 
 ```text
-preprocess/masks/*.png
-preprocess/masks/*.npy
-preprocess/masks_preview/
-preprocess/masks_candidates/
+preprocess/masks/<frame_stem>.npy
+preprocess/masks/<frame_stem>.png
+preprocess/masks_preview/<frame_stem>.png
+preprocess/masks_debug/first_frame_box.jpg
+preprocess/masks_debug/first_frame_mask.png
+preprocess/masks_debug/first_frame_mask_overlay.jpg
 ```
 
-`masks_preview/` contains RGB overlays for inspection. `masks_candidates/` is populated by automatic first-frame SAM2 mode.
+The `.npy` masks are the required downstream artifacts used by tracking and training. The `.png` masks and `masks_preview/` overlays are for inspection. Frame stems are preserved after preprocessing whenever possible: an input frame named `0016.jpg` becomes `frames/0016.png`, `masks/0016.npy`, and `masks/0016.png`.
 
-## SAM2 Masks Without Text Prompts
+## Grounding DINO + SAM2 Masks
 
-This repository does not require text prompts for masking. SAM2 replaces a GroundingDINO-style text prompt workflow by using either direct first-frame prompts or automatic first-frame mask candidates.
+The default mask pipeline is:
 
-### Manual Point Or Box Initialization
+- Grounding DINO runs once on the first frame with `preprocess.prompt`.
+- The best text-matched box above `preprocess.box_threshold` is selected.
+- SAM2 is initialized from that box.
+- SAM2 propagates the mask through the sequence.
+- Masks are saved in the repository's existing `preprocess/masks/` layout.
 
-Use `sam2_manual_init` when you know where the target object is on the first frame. You can provide positive/negative points, a box, or both.
-
-Example with one positive point:
-
-```bash
-python scripts/preprocess_video.py ^
-  --input_video path/to/video.mp4 ^
-  --mask_method sam2_manual_init ^
-  --sam2_points "240,180" ^
-  --sam2_point_labels "1" ^
-  --sam2_checkpoint checkpoints/sam2.1_hiera_large.pt ^
-  --sam2_model_cfg configs/sam2.1/sam2.1_hiera_l.yaml
-```
-
-Example with a first-frame box:
-
-```bash
-python scripts/preprocess_video.py ^
-  --input_video path/to/video.mp4 ^
-  --mask_method sam2_manual_init ^
-  --sam2_box "120,80,420,360"
-```
-
-Point format is `x,y;x,y`. Labels are `1` for foreground and `0` for background. Box format is `x0,y0,x1,y1`, in first-frame pixel coordinates.
-
-Equivalent YAML:
+Default YAML:
 
 ```yaml
 preprocess:
-  mask_method: sam2_manual_init
-  sam2_checkpoint: checkpoints/sam2.1_hiera_large.pt
-  sam2_model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
-  sam2_points:
-    - [240, 180]
-  sam2_point_labels: [1]
-  sam2_box: null
+  mask_method: gdino_sam2
+  prompt: "a person"
+  box_threshold: 0.3
+  sam2_config: "configs/sam2/sam2_hiera_l.yaml"
+  sam2_ckpt: "checkpoints/sam2_hiera_large.pt"
+  overwrite: false
+  stop_after_init: false
 ```
 
-### Automatic First-Frame Masks
-
-Use `sam2_auto_first_frame` when you do not want to provide any prompt. The code runs SAM2 automatic mask generation on the first frame, saves every candidate, writes an indexed overview image, then propagates the selected candidate mask through the video.
-
-First run:
+Debug first, then run the full preprocessing:
 
 ```bash
 python scripts/preprocess_video.py ^
   --input_video path/to/video.mp4 ^
-  --mask_method sam2_auto_first_frame ^
-  --selected_mask_id 0
+  --prompt "a person" ^
+  --stop_after_init ^
+  --overwrite
 ```
 
 Inspect:
 
 ```text
-outputs/run_YYYYMMDD_HHMM/preprocess/masks_candidates/
-  index_image.png
-  candidates.json
-  mask_000.png
-  mask_001.png
-  ...
+outputs/run_YYYYMMDD_HHMM/preprocess/masks_debug/
+  first_frame_box.jpg
+  first_frame_mask.png
+  first_frame_mask_overlay.jpg
 ```
 
-Choose the target object ID from `candidates.json` and the candidate PNGs, then rerun with that ID:
+If the box or mask is wrong, change `--prompt` or lower `--box_threshold`, then rerun. Grounding DINO runs only on the first frame, so a good first-frame prompt matters.
+
+The requested default checkpoint path is `checkpoints/sam2_hiera_large.pt`. This repository also accepts the existing local SAM2.1 checkpoint path `checkpoints/sam2.1_hiera_large.pt`; pass it explicitly with `--sam2_ckpt` and the matching config with `--sam2_config` when using SAM2.1 weights.
+
+Run the full pipeline:
 
 ```bash
 python scripts/preprocess_video.py ^
   --input_video path/to/video.mp4 ^
-  --mask_method sam2_auto_first_frame ^
-  --selected_mask_id 3
+  --prompt "a person" ^
+  --overwrite
 ```
+
+### Manual SAM2 Modes
+
+Use `sam2_manual_box` when you want to bypass Grounding DINO and provide the first-frame box yourself:
+
+```bash
+python scripts/preprocess_video.py ^
+  --input_video path/to/video.mp4 ^
+  --mask_method sam2_manual_box ^
+  --sam2_box "120,80,420,360"
+```
+
+Use `sam2_manual_mask` when you already have a binary first-frame mask:
+
+```bash
+python scripts/preprocess_video.py ^
+  --input_video path/to/video.mp4 ^
+  --mask_method sam2_manual_mask ^
+  --sam2_mask_path path/to/first_frame_mask.png
+```
+
+Box format is `x0,y0,x1,y1`, in first-frame pixel coordinates.
 
 Equivalent YAML:
 
 ```yaml
 preprocess:
-  mask_method: sam2_auto_first_frame
-  sam2_checkpoint: checkpoints/sam2.1_hiera_large.pt
-  sam2_model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
-  selected_mask_id: 3
+  mask_method: sam2_manual_box
+  sam2_box: [120, 80, 420, 360]
 ```
 
 ### Fallback Masks

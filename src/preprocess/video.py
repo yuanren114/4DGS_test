@@ -32,7 +32,7 @@ def extract_frames(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     input_path = Path(input_video)
-    frames: List[np.ndarray] = []
+    frames: List[tuple[str, np.ndarray]] = []
 
     if input_path.is_dir():
         image_paths = sorted(p for p in input_path.iterdir() if p.suffix.lower() in {".png", ".jpg", ".jpeg"})
@@ -40,7 +40,7 @@ def extract_frames(
             if idx % frame_stride != 0:
                 continue
             image = np.asarray(Image.open(path).convert("RGB"))
-            frames.append(_resize(image, image_size))
+            frames.append((path.stem, _resize(image, image_size)))
             if max_frames is not None and len(frames) >= max_frames:
                 break
     elif input_path.exists():
@@ -58,7 +58,7 @@ def extract_frames(
                 break
             if raw_idx % frame_stride == 0:
                 frame_rgb = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
-                frames.append(_resize(frame_rgb, image_size))
+                frames.append((f"{len(frames):05d}", _resize(frame_rgb, image_size)))
                 if max_frames is not None and len(frames) >= max_frames:
                     break
             raw_idx += 1
@@ -67,8 +67,8 @@ def extract_frames(
         raise FileNotFoundError(f"Input video or frame directory does not exist: {input_video}")
 
     saved: List[Path] = []
-    for idx, frame in enumerate(frames):
-        path = output_dir / f"{idx:05d}.png"
+    for stem, frame in frames:
+        path = output_dir / f"{stem}.png"
         write_image(path, frame)
         saved.append(path)
     return saved

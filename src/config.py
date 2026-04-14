@@ -25,7 +25,14 @@ class PreprocessConfig:
     depth_method: str = "depth_anything_v2"
     camera_method: str = "colmap_or_simple_vo"
     mask_method: str = "saliency_fallback"
-    track_method: str = "grid_optical_flow"
+    track_method: str = "proxy_grid_lk"
+    bootstap_repo: str = "external/tapnet"
+    bootstap_checkpoint: str = "checkpoints/bootstapir_checkpoint_v2.pt"
+    tapip3d_repo: str = "external/TAPIP3D"
+    tapip3d_checkpoint: str = "checkpoints/tapip3d_final.pth"
+    tapip3d_resolution_factor: int = 1
+    tapip3d_num_iters: int = 6
+    tapip3d_support_grid_size: int = 16
     reuse_existing: bool = True
 
 

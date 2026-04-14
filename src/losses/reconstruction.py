@@ -49,7 +49,7 @@ def arap_loss(model) -> torch.Tensor:
 
 
 def track_projection_loss(rendered: Dict[str, torch.Tensor], sample: Dict[str, torch.Tensor]) -> torch.Tensor:
-    """Weakly align rendered Gaussian projections to pseudo 2D tracks."""
+    """Weakly align rendered Gaussian projections to preprocessed 2D tracks."""
 
     means = rendered["means_t"]
     uv, _ = project_points(means, sample["intrinsics"], sample["world_to_camera"])

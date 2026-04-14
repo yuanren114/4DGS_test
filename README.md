@@ -20,8 +20,21 @@ Engineering substitutions:
 
 - Depth is estimated from RGB with Depth Anything v2 when available, otherwise a fallback for quick tests.
 - Camera parameters are saved in a reproducible JSON schema, with a simple proxy trajectory by default.
-- AnchorTAP3D is approximated with foreground grid tracks, optional OpenCV optical flow, and depth/camera unprojection.
+- The default tracking backend is `proxy_grid_lk`: foreground grid tracks, optional OpenCV optical flow, and depth/camera unprojection. This is not AnchorTAP3D.
+- Optional official-component adapters are provided for Google DeepMind BootsTAPIR and the official TAPIP3D repository, but the full 4DGS360 AnchorTAP3D anchor-window algorithm remains unavailable unless supplied separately.
 - Rendering uses a pure PyTorch isotropic Gaussian splatter rather than the production CUDA 3DGS rasterizer.
+
+## Component Faithfulness
+
+| Component | PDF Method | Current Implementation | Faithfulness | Importance | Needs Review |
+| --------- | ---------- | ---------------------- | ------------ | ---------- | ------------ |
+| Depth | Dataset/sensor or pretrained depth input | Depth Anything v2 wrapper, fallback pseudo-depth for quick tests | MEDIUM | HIGH | YES |
+| Camera | Dataset/sensor or pretrained camera parameters | COLMAP-ready interface, simple proxy trajectory by default | LOW | HIGH | YES |
+| AnchorTAP3D | BootsTAP + TAPIP3D with anchor-guided sliding-window 3D tracking | Default `proxy_grid_lk`; optional `bootstap_tapip3d_components` adapters without the missing anchor-window modification | LOW | HIGH | YES |
+| Masks | Dynamic object masks | RGB saliency/median fallback masks | LOW | MEDIUM | YES |
+| Dynamic Gaussians | Canonical 3DGS with hierarchical motion | Compact PyTorch Gaussians with KNN node translations | MEDIUM-LOW | HIGH | YES |
+| Renderer | Differentiable 3DGS rasterizer | Pure PyTorch isotropic splatter | LOW | HIGH | YES |
+| Losses | RGB, mask, depth, track, ARAP | Implemented approximations with logged terms | MEDIUM | MEDIUM | YES |
 
 ## Installation
 
@@ -32,6 +45,25 @@ pip install -r requirements.txt
 ```
 
 For real videos, `opencv-python` is needed for frame extraction and optical flow. `transformers` enables Depth Anything v2 loading. If Depth Anything weights cannot be downloaded, the code still runs with the documented fallback, but quality should not be trusted.
+
+To set up the optional official tracker components:
+
+```bash
+python scripts/setup_external_trackers.py
+pip install -e external/tapnet
+```
+
+This clones:
+
+- `https://github.com/google-deepmind/tapnet.git`
+- `https://github.com/zbw001/TAPIP3D.git`
+
+and downloads:
+
+- `checkpoints/bootstapir_checkpoint_v2.pt`
+- `checkpoints/tapip3d_final.pth`
+
+TAPIP3D's official inference additionally requires its compiled `pointops2` extension and the environment described in `external/TAPIP3D/README.md`. On Windows/Python 3.13 this may require Microsoft C++ Build Tools or, more practically, a separate Python 3.10 CUDA environment.
 
 ## Quick Test
 
@@ -80,6 +112,19 @@ outputs/run_YYYYMMDD_HHMM/preprocess/
   metadata/preprocess_manifest.json
 ```
 
+The default tracker backend is `proxy_grid_lk`. To request the optional official-component backend after setting up the external repositories and TAPIP3D environment, set this in a config file:
+
+```yaml
+preprocess:
+  track_method: bootstap_tapip3d_components
+  bootstap_repo: external/tapnet
+  bootstap_checkpoint: checkpoints/bootstapir_checkpoint_v2.pt
+  tapip3d_repo: external/TAPIP3D
+  tapip3d_checkpoint: checkpoints/tapip3d_final.pth
+```
+
+This backend is closer to the PDFs because it uses BootsTAPIR and TAPIP3D components, but it is still not a complete paper-faithful AnchorTAP3D implementation without the missing anchor-guided TAPIP3D loop.
+
 ## Train
 
 Train from a new video:
@@ -117,6 +162,7 @@ The default config lives in `src/config.py` and is saved to each run as `config.
 - `preprocess.max_frames`
 - `preprocess.depth_method`
 - `preprocess.camera_method`
+- `preprocess.track_method`
 - `model.num_gaussians`
 - `model.num_nodes`
 - `train.iterations`
@@ -128,6 +174,6 @@ You can pass a YAML file with `--config`.
 
 ## Known Limitations
 
-This is runnable and inspectable, but it is not a full paper-faithful reproduction. The most important gaps are camera estimation, Depth Anything pseudo-depth quality, the AnchorTAP3D substitute, simplified node motion, and pure PyTorch splatting instead of CUDA 3DGS rasterization.
+This is runnable and inspectable, but it is not a full paper-faithful reproduction. The most important gaps are camera estimation, Depth Anything pseudo-depth quality, missing full AnchorTAP3D anchor-guided 3D tracking, simplified node motion, and pure PyTorch splatting instead of CUDA 3DGS rasterization.
 
-Before trusting results on your own data, review the HIGH-risk assumptions in `docs/implementation_assumptions.md`, especially camera poses and pseudo-depth. For experimental use, replace the proxy camera JSON with COLMAP, DROID-SLAM, DUSt3R/MASt3R, or another robust estimator, and replace fallback masks/tracks with stronger segmentation and tracking modules.
+Before trusting results on your own data, review the HIGH-risk assumptions in `docs/implementation_assumptions.md`, especially camera poses, pseudo-depth, and track backend. For experimental use, replace the proxy camera JSON with COLMAP, DROID-SLAM, DUSt3R/MASt3R, or another robust estimator, and use the official tracker adapters or a true 4DGS360 AnchorTAP3D implementation if available.

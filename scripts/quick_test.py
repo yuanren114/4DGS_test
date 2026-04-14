@@ -21,7 +21,7 @@ def main() -> None:
         overrides={
             "quick_test": True,
             "run_name": "run_quick_test",
-            "preprocess": {"max_frames": 6, "image_size": 96, "depth_method": "fallback"},
+            "preprocess": {"max_frames": 6, "image_size": 96, "depth_method": "fallback", "track_method": "proxy_grid_lk"},
             "model": {"num_gaussians": 96, "num_nodes": 16, "k_nearest_nodes": 4, "init_scale": 0.025},
             "train": {"iterations": 8, "log_every": 1, "save_every": 1000, "device": "auto", "lr": 2.0e-3},
             "inference": {"num_bullet_time_views": 4, "time_index": 2},

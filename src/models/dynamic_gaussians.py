@@ -32,7 +32,7 @@ class DynamicGaussianModel(nn.Module):
         self.node_offsets = nn.Parameter(torch.zeros(num_frames, config.num_nodes, 3))
 
     def initialize_from_tracks(self, tracks_xyz: torch.Tensor, images: torch.Tensor) -> None:
-        """Initialize Gaussian means and colors from pseudo-3D tracks."""
+        """Initialize Gaussian means and colors from preprocessed 3D tracks."""
 
         with torch.no_grad():
             xyz0 = tracks_xyz[0]

@@ -5,11 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Dict
 
+import torch
+
 from src.config import AppConfig
 from src.preprocess.camera import estimate_cameras
 from src.preprocess.depth import estimate_depth_sequence
 from src.preprocess.masks import estimate_masks
-from src.preprocess.tracks import build_grid_tracks
+from src.preprocess.track_backends import get_3d_tracks
 from src.preprocess.video import create_synthetic_frames, extract_frames
 from src.utils.io import save_json
 from src.utils.logging import RunLogger
@@ -47,8 +49,16 @@ def run_preprocessing(config: AppConfig, run_dir: Path, logger: RunLogger) -> Di
     mask_paths = estimate_masks(frame_paths, mask_dir, config.preprocess.mask_method)
     logger.log(f"preprocess.masks: {len(mask_paths)} masks -> {mask_dir}")
 
-    tracks_path = build_grid_tracks(frame_paths, depth_paths, camera_path, mask_paths, track_dir)
-    logger.log(f"preprocess.tracks: pseudo tracks -> {tracks_path}")
+    tracks_path = get_3d_tracks(
+        frame_paths=frame_paths,
+        depth_paths=depth_paths,
+        camera_json=camera_path,
+        mask_paths=mask_paths,
+        output_dir=track_dir,
+        config=config.preprocess,
+        device=config.train.device if config.train.device != "auto" else "cuda" if torch.cuda.is_available() else "cpu",
+    )
+    logger.log(f"preprocess.tracks: {config.preprocess.track_method} -> {tracks_path}")
 
     metadata = {
         "frames_dir": str(frames_dir),

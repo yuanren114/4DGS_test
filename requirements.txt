@@ -8,3 +8,17 @@ matplotlib
 opencv-python
 transformers
 pypdf
+einops
+av
+typed-argument-parser
+hydra-core
+kornia
+rerun-sdk
+trimesh
+huggingface_hub
+python-box
+timm
+wandb
+accelerate
+h5py
+imageio[ffmpeg]

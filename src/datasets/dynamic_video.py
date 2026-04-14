@@ -13,7 +13,7 @@ from src.utils.io import list_images, load_json, read_image
 
 
 class DynamicVideoDataset(Dataset):
-    """Load frames, pseudo-depth, masks, cameras, and pseudo-tracks."""
+    """Load frames, pseudo-depth, masks, cameras, and 3D track artifacts."""
 
     def __init__(self, preprocess_dir: Path) -> None:
         self.preprocess_dir = Path(preprocess_dir)

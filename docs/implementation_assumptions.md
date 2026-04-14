@@ -6,7 +6,7 @@ This document separates the PDF-described 4DGS360 method from the engineering de
 
 The PDFs describe 4DGS360, a monocular dynamic object reconstruction method. The paper's method input is a sequence of RGB training frames, depth maps, and camera parameters. It uses AnchorTAP3D to create 3D point trajectories from 2D tracking anchors and a 3D tracker, initializes canonical dynamic Gaussians and hierarchical motion nodes from those trajectories, then optimizes a dynamic Gaussian representation with RGB, mask, depth, track, and ARAP-style rigidity losses. Inference renders a chosen time from training or novel camera views, including 360-degree bullet-time style views.
 
-The available user input for this repository is stricter than the paper setup: only RGB video is assumed. Therefore depth, cameras, masks, and tracks are estimated or approximated during preprocessing.
+The available user input for this repository is stricter than the paper setup: only RGB video is assumed. Therefore depth, cameras, masks, and tracks are estimated during preprocessing. The default tracking backend is explicitly a proxy baseline, not AnchorTAP3D.
 
 ## Camera And Depth Decision Report
 
@@ -38,6 +38,28 @@ Classification: HIGH. This affects method validity and paper faithfulness.
 
 If depth fails, inspect normalized depth PNGs, try a larger Depth Anything model, lower image resolution only after confirming quality, or replace depth `.npy` files. If camera estimation fails, use a static-camera setting only for debugging or provide converted camera poses. If masks or tracks fail, inspect `masks/*.png` and `tracks/tracks.npz`, then replace them with outputs from SAM/Track-Anything/CoTracker/BootsTAP style tools.
 
+## AnchorTAP3D Implementation Status
+
+PDF-specified method: The PDFs specify AnchorTAP3D as a combination of BootsTAP for 2D tracking and TAPIP3D for 3D tracking. BootsTAP confidence is computed from visibility and uncertainty logits. High-confidence 2D points are lifted with depth/camera parameters and used as anchors inside a sliding-window 3D tracker. The 3D tracker is iterated within a fixed-length window, with anchors replacing reliable points after each inference iteration.
+
+Current default implementation: `track_method: proxy_grid_lk` uses `src/preprocess/proxy_3d_tracks.py`. It samples first-frame foreground grid points, optionally applies OpenCV Lucas-Kanade optical flow, samples pseudo-depth at the tracked 2D coordinates, and unprojects with the estimated camera JSON. It saves `uv`, `xyz`, and confidence arrays to `tracks.npz`.
+
+Current optional official-component integration: `track_method: bootstap_tapip3d_components` uses `src/preprocess/boots_tap_adapter.py` to call Google DeepMind TAP-Net's PyTorch BootsTAPIR checkpoint and `src/preprocess/tapip3d_adapter.py` to call the official TAPIP3D inference script from `zbw001/TAPIP3D`. The setup helper `scripts/setup_external_trackers.py` clones both repositories and downloads the BootsTAPIR and TAPIP3D checkpoints. This integrates the named external components as much as the public code permits, but it does not implement the paper's missing AnchorTAP3D anchor-window modification unless that code is supplied.
+
+Faithfulness: NOT paper-faithful for the default backend. The optional official-component backend is closer, but still not a complete AnchorTAP3D implementation because the 4DGS360-specific anchor-guided TAPIP3D loop is not available in the PDFs or public code inspected here.
+
+Why substitution exists: The PDFs describe AnchorTAP3D conceptually but do not provide executable code for the anchor-conditioned TAPIP3D modification. Public repositories provide BootsTAPIR/TAP-Net and TAPIP3D separately, so the code wraps those official components where available and keeps a proxy backend for fast runnable tests.
+
+What is missing: Exact AnchorTAP3D window scheduling, anchor replacement logic inside TAPIP3D, confidence filtering integration during every 3D inference iteration, dynamic-mask rejection inside the tracker, and any 4DGS360-specific tracker model weights or code.
+
+Effect on results: HIGH. Initialization quality is central to the paper's claim. Proxy tracks can overfit visible surfaces and fail precisely where AnchorTAP3D is meant to help. Official BootsTAPIR + TAPIP3D components are expected to be better, but without the anchor-guided loop they still may not reproduce paper behavior.
+
+User must care: YES. Do not trust 360-degree reconstruction claims unless this section is resolved.
+
+Classification: HIGH.
+
+Environment status: Internet and GitHub access were available. The external repositories were cloned locally under `external/`, and checkpoints were downloaded under `checkpoints/`. TAP-Net BootsTAPIR checkpoint loading was verified. TAPIP3D import currently requires its compiled `pointops2` extension and related official environment setup; on this Windows Python 3.13 environment, `sophuspy` failed to build because Microsoft C++ Build Tools were missing. The limitation for running TAPIP3D here is environmental, not methodological.
+
 ## Assumption Table
 
 ### A1. RGB-only input expansion
@@ -46,7 +68,7 @@ Topic: Required modalities.
 
 Missing or unclear: The paper method assumes RGB frames, depth maps, and camera parameters, while this repository must accept only RGB video.
 
-Decision: Add preprocessing stages for depth, camera, masks, and pseudo-tracks.
+Decision: Add preprocessing stages for depth, camera, masks, and 3D tracks. The default track backend is a proxy baseline; an optional official BootsTAPIR + TAPIP3D component backend is exposed.
 
 Why reasonable: This is the only way to run the pipeline from the stated input.
 
@@ -88,19 +110,19 @@ Support type: Engineering workaround because only RGB video is available.
 
 Risk: HIGH.
 
-### A4. AnchorTAP3D substitution
+### A4. 3D tracking and AnchorTAP3D gap
 
 Topic: 2D/3D tracking.
 
-Missing or unclear: BootsTAP and TAPIP3D are described but not implemented in enough detail to reproduce inside this repository.
+Missing or unclear: BootsTAP and TAPIP3D are specified, but the PDFs do not provide the exact 4DGS360 AnchorTAP3D implementation that injects high-confidence 2D anchors into TAPIP3D's sliding-window inference loop.
 
-Decision: Implement a grid plus optical-flow pseudo-track builder and unproject tracks using pseudo-depth/cameras. Mark it as an AnchorTAP3D substitute.
+Decision: Rename the runnable baseline to `proxy_grid_lk` and expose it through `get_3d_tracks(...)`. Add optional adapters for official BootsTAPIR and TAPIP3D components under `bootstap_tapip3d_components`.
 
-Why reasonable: It provides reusable track tensors and makes the model/training path runnable.
+Why reasonable: It prevents false paper-faithfulness claims while preserving a runnable baseline and a clean path to stronger external trackers.
 
 Review needed: Yes.
 
-Support type: Engineering workaround.
+Support type: Engineering workaround plus partial official-component integration.
 
 Risk: HIGH.
 
@@ -206,6 +228,6 @@ LOW: A10 evaluation output scope.
 
 MEDIUM: A5 masks, A8 loss defaults, A9 densification omitted.
 
-HIGH: A1 RGB-only expansion, A2 depth, A3 cameras, A4 AnchorTAP3D substitution, A6 renderer, A7 motion simplification.
+HIGH: A1 RGB-only expansion, A2 depth, A3 cameras, A4 3D tracking and AnchorTAP3D gap, A6 renderer, A7 motion simplification.
 
 Before trusting experimental results, review all HIGH items.

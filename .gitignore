@@ -6,5 +6,8 @@ __pycache__/
 outputs/run_*/
 outputs/run_quick_test/
 outputs/debug/pdf_text/
+external/
+checkpoints/
 
 *.pt
+*.pth

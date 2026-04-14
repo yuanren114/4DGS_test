@@ -12,11 +12,13 @@ import urllib.request
 REPOS = {
     "tapnet": "https://github.com/google-deepmind/tapnet.git",
     "TAPIP3D": "https://github.com/zbw001/TAPIP3D.git",
+    "sam2": "https://github.com/facebookresearch/sam2.git",
 }
 
 CHECKPOINTS = {
     "checkpoints/bootstapir_checkpoint_v2.pt": "https://storage.googleapis.com/dm-tapnet/bootstap/bootstapir_checkpoint_v2.pt",
     "checkpoints/tapip3d_final.pth": "https://huggingface.co/zbww/tapip3d/resolve/main/tapip3d_final.pth",
+    "checkpoints/sam2.1_hiera_large.pt": "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_large.pt",
 }
 
 

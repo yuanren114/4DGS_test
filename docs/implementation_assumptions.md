@@ -36,7 +36,19 @@ Classification: HIGH. This affects method validity and paper faithfulness.
 
 ### Failure Advice
 
-If depth fails, inspect normalized depth PNGs, try a larger Depth Anything model, lower image resolution only after confirming quality, or replace depth `.npy` files. If camera estimation fails, use a static-camera setting only for debugging or provide converted camera poses. If masks or tracks fail, inspect `masks/*.png` and `tracks/tracks.npz`, then replace them with outputs from SAM/Track-Anything/CoTracker/BootsTAP style tools.
+If depth fails, inspect normalized depth PNGs, try a larger Depth Anything model, lower image resolution only after confirming quality, or replace depth `.npy` files. If camera estimation fails, use a static-camera setting only for debugging or provide converted camera poses. If masks fail, prefer the SAM2 modes documented in README and inspect `masks_preview/` plus `masks_candidates/`. If tracks fail, inspect `tracks/tracks.npz`, then replace them with outputs from stronger tracking tools.
+
+## SAM2 Masking Status
+
+PDF-specified method: The PDFs use dynamic object masks but do not specify how masks are obtained from RGB-only input.
+
+Current implementation: `mask_method: sam2_manual_init` uses first-frame points and/or a first-frame bounding box, then propagates the object mask through the video with SAM2. `mask_method: sam2_auto_first_frame` runs SAM2 automatic mask generation on the first frame, saves all candidates and an index image, selects `selected_mask_id`, converts that selected mask to a point/box prompt, and propagates it through the video. `mask_method: fallback` keeps the old RGB saliency/median-background method for quick tests.
+
+Faithfulness: This is not directly specified by 4DGS360, but it is a stronger standard-practice engineering choice than the fallback because it avoids text prompts and produces video-propagated masks.
+
+Why no GroundingDINO: The user requested a workflow without text prompts. SAM2 manual points/boxes and automatic first-frame masks satisfy that constraint.
+
+Classification: MEDIUM. Mask quality affects optimization and object compactness, but it is less central than camera/depth/tracker validity.
 
 ## AnchorTAP3D Implementation Status
 
@@ -132,13 +144,13 @@ Topic: Dynamic foreground masks.
 
 Missing or unclear: The PDFs use dynamic object masks but do not specify how to get them from RGB-only user video.
 
-Decision: Use a median-background/color-saliency fallback mask estimator.
+Decision: Use SAM2 manual initialization or SAM2 automatic first-frame mask selection for real preprocessing. Keep the old median-background/color-saliency estimator only as `fallback`.
 
-Why reasonable: It is deterministic and inspectable; stronger SAM/video segmentation can replace the saved masks.
+Why reasonable: SAM2 provides promptless automatic first-frame candidates and point/box-based video propagation, so it does not require GroundingDINO or text prompts.
 
 Review needed: Yes for real data.
 
-Support type: Engineering workaround.
+Support type: Inferred from standard practice.
 
 Risk: MEDIUM.
 

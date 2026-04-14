@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 import datetime as _dt
 import json
 
@@ -24,7 +24,16 @@ class PreprocessConfig:
     image_size: int = 256
     depth_method: str = "depth_anything_v2"
     camera_method: str = "colmap_or_simple_vo"
-    mask_method: str = "saliency_fallback"
+    mask_method: str = "fallback"
+    sam2_repo: str = "external/sam2"
+    sam2_checkpoint: str = "checkpoints/sam2.1_hiera_large.pt"
+    sam2_model_cfg: str = "configs/sam2.1/sam2.1_hiera_l.yaml"
+    sam2_points: List[List[float]] = field(default_factory=list)
+    sam2_point_labels: List[int] = field(default_factory=list)
+    sam2_box: Optional[List[float]] = None
+    selected_mask_id: int = 0
+    sam2_obj_id: int = 1
+    sam2_mask_threshold: float = 0.0
     track_method: str = "proxy_grid_lk"
     bootstap_repo: str = "external/tapnet"
     bootstap_checkpoint: str = "checkpoints/bootstapir_checkpoint_v2.pt"

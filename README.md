@@ -31,7 +31,7 @@ Engineering substitutions:
 | Depth | Dataset/sensor or pretrained depth input | Depth Anything v2 wrapper, fallback pseudo-depth for quick tests | MEDIUM | HIGH | YES |
 | Camera | Dataset/sensor or pretrained camera parameters | COLMAP-ready interface, simple proxy trajectory by default | LOW | HIGH | YES |
 | AnchorTAP3D | BootsTAP + TAPIP3D with anchor-guided sliding-window 3D tracking | Default `proxy_grid_lk`; optional `bootstap_tapip3d_components` adapters without the missing anchor-window modification | LOW | HIGH | YES |
-| Masks | Dynamic object masks | RGB saliency/median fallback masks | LOW | MEDIUM | YES |
+| Masks | Dynamic object masks | SAM2 manual or auto-first-frame propagation; RGB fallback remains available | MEDIUM | MEDIUM | YES |
 | Dynamic Gaussians | Canonical 3DGS with hierarchical motion | Compact PyTorch Gaussians with KNN node translations | MEDIUM-LOW | HIGH | YES |
 | Renderer | Differentiable 3DGS rasterizer | Pure PyTorch isotropic splatter | LOW | HIGH | YES |
 | Losses | RGB, mask, depth, track, ARAP | Implemented approximations with logged terms | MEDIUM | MEDIUM | YES |
@@ -57,13 +57,21 @@ This clones:
 
 - `https://github.com/google-deepmind/tapnet.git`
 - `https://github.com/zbw001/TAPIP3D.git`
+- `https://github.com/facebookresearch/sam2.git`
 
 and downloads:
 
 - `checkpoints/bootstapir_checkpoint_v2.pt`
 - `checkpoints/tapip3d_final.pth`
+- `checkpoints/sam2.1_hiera_large.pt`
 
 TAPIP3D's official inference additionally requires its compiled `pointops2` extension and the environment described in `external/TAPIP3D/README.md`. On Windows/Python 3.13 this may require Microsoft C++ Build Tools or, more practically, a separate Python 3.10 CUDA environment.
+
+For SAM2 masks, install the official SAM2 package after setup:
+
+```bash
+pip install -e external/sam2
+```
 
 ## Quick Test
 
@@ -111,6 +119,115 @@ outputs/run_YYYYMMDD_HHMM/preprocess/
   tracks/tracks.npz
   metadata/preprocess_manifest.json
 ```
+
+Mask outputs are saved to:
+
+```text
+preprocess/masks/*.png
+preprocess/masks/*.npy
+preprocess/masks_preview/
+preprocess/masks_candidates/
+```
+
+`masks_preview/` contains RGB overlays for inspection. `masks_candidates/` is populated by automatic first-frame SAM2 mode.
+
+## SAM2 Masks Without Text Prompts
+
+This repository does not require text prompts for masking. SAM2 replaces a GroundingDINO-style text prompt workflow by using either direct first-frame prompts or automatic first-frame mask candidates.
+
+### Manual Point Or Box Initialization
+
+Use `sam2_manual_init` when you know where the target object is on the first frame. You can provide positive/negative points, a box, or both.
+
+Example with one positive point:
+
+```bash
+python scripts/preprocess_video.py ^
+  --input_video path/to/video.mp4 ^
+  --mask_method sam2_manual_init ^
+  --sam2_points "240,180" ^
+  --sam2_point_labels "1" ^
+  --sam2_checkpoint checkpoints/sam2.1_hiera_large.pt ^
+  --sam2_model_cfg configs/sam2.1/sam2.1_hiera_l.yaml
+```
+
+Example with a first-frame box:
+
+```bash
+python scripts/preprocess_video.py ^
+  --input_video path/to/video.mp4 ^
+  --mask_method sam2_manual_init ^
+  --sam2_box "120,80,420,360"
+```
+
+Point format is `x,y;x,y`. Labels are `1` for foreground and `0` for background. Box format is `x0,y0,x1,y1`, in first-frame pixel coordinates.
+
+Equivalent YAML:
+
+```yaml
+preprocess:
+  mask_method: sam2_manual_init
+  sam2_checkpoint: checkpoints/sam2.1_hiera_large.pt
+  sam2_model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
+  sam2_points:
+    - [240, 180]
+  sam2_point_labels: [1]
+  sam2_box: null
+```
+
+### Automatic First-Frame Masks
+
+Use `sam2_auto_first_frame` when you do not want to provide any prompt. The code runs SAM2 automatic mask generation on the first frame, saves every candidate, writes an indexed overview image, then propagates the selected candidate mask through the video.
+
+First run:
+
+```bash
+python scripts/preprocess_video.py ^
+  --input_video path/to/video.mp4 ^
+  --mask_method sam2_auto_first_frame ^
+  --selected_mask_id 0
+```
+
+Inspect:
+
+```text
+outputs/run_YYYYMMDD_HHMM/preprocess/masks_candidates/
+  index_image.png
+  candidates.json
+  mask_000.png
+  mask_001.png
+  ...
+```
+
+Choose the target object ID from `candidates.json` and the candidate PNGs, then rerun with that ID:
+
+```bash
+python scripts/preprocess_video.py ^
+  --input_video path/to/video.mp4 ^
+  --mask_method sam2_auto_first_frame ^
+  --selected_mask_id 3
+```
+
+Equivalent YAML:
+
+```yaml
+preprocess:
+  mask_method: sam2_auto_first_frame
+  sam2_checkpoint: checkpoints/sam2.1_hiera_large.pt
+  sam2_model_cfg: configs/sam2.1/sam2.1_hiera_l.yaml
+  selected_mask_id: 3
+```
+
+### Fallback Masks
+
+The old RGB saliency/median-background method remains available as:
+
+```yaml
+preprocess:
+  mask_method: fallback
+```
+
+It is useful for quick tests and offline wiring checks, but SAM2 should be preferred for real videos.
 
 The default tracker backend is `proxy_grid_lk`. To request the optional official-component backend after setting up the external repositories and TAPIP3D environment, set this in a config file:
 

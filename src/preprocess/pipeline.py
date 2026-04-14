@@ -46,8 +46,15 @@ def run_preprocessing(config: AppConfig, run_dir: Path, logger: RunLogger) -> Di
     camera_path = estimate_cameras(frame_paths, camera_dir, config.preprocess.camera_method)
     logger.log(f"preprocess.camera: camera metadata -> {camera_path}")
 
-    mask_paths = estimate_masks(frame_paths, mask_dir, config.preprocess.mask_method)
-    logger.log(f"preprocess.masks: {len(mask_paths)} masks -> {mask_dir}")
+    mask_paths = estimate_masks(
+        frame_paths=frame_paths,
+        output_dir=mask_dir,
+        config=config.preprocess,
+        preview_dir=pp_dir / "masks_preview",
+        candidates_dir=pp_dir / "masks_candidates",
+        device=config.train.device if config.train.device != "auto" else "cuda" if torch.cuda.is_available() else "cpu",
+    )
+    logger.log(f"preprocess.masks: {config.preprocess.mask_method}, {len(mask_paths)} masks -> {mask_dir}")
 
     tracks_path = get_3d_tracks(
         frame_paths=frame_paths,
